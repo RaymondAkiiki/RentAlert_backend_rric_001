@@ -19,6 +19,7 @@ const eventLogSchema = new mongoose.Schema({
       'MONTHLY_REMINDER_SENT',
       'DASHBOARD_VISITED',
       'FEEDBACK_SUBMITTED',
+      'FEATURE_FLAG_TOGGLED', 
     ],
     required: true,
     index: true,

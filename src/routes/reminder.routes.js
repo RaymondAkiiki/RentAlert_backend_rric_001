@@ -5,6 +5,7 @@ const {
   getJobDetails,
   getReminderLogs,
   getReminderStats,
+  getAvailableMethods, // ✅ NEW
 } = require('../controllers/reminder.controller');
 const { authenticate } = require('../middleware/auth');
 
@@ -13,7 +14,12 @@ const router = express.Router();
 // All routes require authentication
 router.use(authenticate);
 
+// ✅ NEW: Check which reminder methods are currently available
+// GET /api/reminders/methods - Check SMS/Email availability
+router.get('/methods', getAvailableMethods);
+
 // POST /api/reminders/send - Send reminders to tenants
+// Now includes automatic feature flag checking
 router.post('/send', sendReminders);
 
 // GET /api/reminders/jobs/:jobId - Get job status

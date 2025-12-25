@@ -3,11 +3,12 @@ const Tenant = require('../models/tenant.model');
 const ReminderLog = require('../models/reminderlog.model');
 const EventLog = require('../models/eventlog.model');
 const User = require('../models/user.model');
+const FeatureFlag = require('../models/featureflag.model');
 const { getCurrentMonth } = require('../utils/formatters');
 const logger = require('../utils/logger');
 const {
   createReminderJob,
-  getJobStatus: getJobStatusFromService,  // ✅ Renamed to avoid conflict
+  getJobStatus: getJobStatusFromService,
   processRemindersInBackground,
 } = require('../services/reminderJob.service');
 
@@ -31,6 +32,25 @@ const sendReminders = async (req, res) => {
     if (!method || !['sms', 'email'].includes(method)) {
       return res.status(400).json({
         error: 'Method must be either "sms" or "email"',
+      });
+    }
+
+    // ✅ CHECK FEATURE FLAGS
+    const featureKey = method === 'sms' ? 'sms_reminders' : 'email_reminders';
+    const isEnabled = await FeatureFlag.isEnabled(featureKey);
+    
+    if (!isEnabled) {
+      const feature = await FeatureFlag.findOne({ key: featureKey });
+      const message = feature?.disabledMessage || `${method.toUpperCase()} reminders are temporarily unavailable.`;
+      
+      logger.warn(`${method.toUpperCase()} reminders blocked - feature disabled for user: ${userId}`);
+      
+      return res.status(403).json({
+        error: 'Feature unavailable',
+        message,
+        method,
+        enabled: false,
+        suggestion: method === 'sms' ? 'Try using email reminders instead' : null,
       });
     }
 
@@ -76,7 +96,7 @@ const sendReminders = async (req, res) => {
         logger.error('Background job error:', error);
       });
 
-    logger.info(`Job ${jobId} created for ${eligibleCount} tenants`);
+    logger.info(`Job ${jobId} created for ${eligibleCount} tenants (method: ${method})`);
 
     // Return immediately with job ID
     return res.status(202).json({
@@ -98,7 +118,7 @@ const getJobStatus = async (req, res) => {
   try {
     const { jobId } = req.params;
 
-    const job = getJobStatusFromService(jobId);  // ✅ Using renamed import
+    const job = getJobStatusFromService(jobId);
 
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
@@ -130,7 +150,7 @@ const getJobDetails = async (req, res) => {
   try {
     const { jobId } = req.params;
 
-    const job = getJobStatusFromService(jobId);  // ✅ Using renamed import
+    const job = getJobStatusFromService(jobId);
 
     if (!job) {
       return res.status(404).json({ error: 'Job not found' });
@@ -261,10 +281,48 @@ const getReminderStats = async (req, res) => {
   }
 };
 
+/**
+ * ✅ NEW: Check available reminder methods
+ */
+const getAvailableMethods = async (req, res) => {
+  try {
+    const [smsEnabled, emailEnabled] = await Promise.all([
+      FeatureFlag.isEnabled('sms_reminders'),
+      FeatureFlag.isEnabled('email_reminders'),
+    ]);
+
+    const [smsFeature, emailFeature] = await Promise.all([
+      FeatureFlag.findOne({ key: 'sms_reminders' }),
+      FeatureFlag.findOne({ key: 'email_reminders' }),
+    ]);
+
+    return res.status(200).json({
+      methods: {
+        sms: {
+          enabled: smsEnabled,
+          available: smsEnabled,
+          message: !smsEnabled ? smsFeature?.disabledMessage : null,
+        },
+        email: {
+          enabled: emailEnabled,
+          available: emailEnabled,
+          message: !emailEnabled ? emailFeature?.disabledMessage : null,
+        },
+      },
+      hasAnyMethod: smsEnabled || emailEnabled,
+      recommendedMethod: smsEnabled ? 'sms' : emailEnabled ? 'email' : null,
+    });
+  } catch (error) {
+    logger.error('Get available methods error:', error);
+    return res.status(500).json({ error: 'Failed to check available methods' });
+  }
+};
+
 module.exports = {
   sendReminders,
   getJobStatus,
   getJobDetails,
   getReminderLogs,
   getReminderStats,
+  getAvailableMethods, // ✅ NEW
 };

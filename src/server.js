@@ -126,6 +126,7 @@ app.use('/api/tenants', require('./routes/tenant.routes'));
 app.use('/api/reminders', require('./routes/reminder.routes'));
 app.use('/api/feedback', require('./routes/feedback.routes'));
 app.use('/api/admin', require('./routes/admin.routes'));
+app.use('/api/features', require('./routes/feature.routes'));
 
 // Root route
 app.get('/', (req, res) => {
